@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Vertical Gradient -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1f2128"/>
+      <stop offset="100%" stop-color="#15161b"/>
+    </linearGradient>
+
+    <!-- Keycap Base / Depth Extrusion Gradient -->
+    <linearGradient id="keycapBaseGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#232733"/>
+      <stop offset="100%" stop-color="#12141a"/>
+    </linearGradient>
+
+    <!-- Keycap Top Face Gradient -->
+    <linearGradient id="keycapTopGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#343a48"/>
+      <stop offset="100%" stop-color="#222631"/>
+    </linearGradient>
+
+    <!-- Keycap Top Rim Highlight Gradient -->
+    <linearGradient id="topBorderGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4a5366"/>
+      <stop offset="100%" stop-color="#1a1c24"/>
+    </linearGradient>
+
+    <!-- Soft Cyan Glow Filter -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+    </filter>
+  </defs>
+
+  <!-- Background: Rounded Square with Subtle Border -->
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="url(#bgGrad)" stroke="#282c38" stroke-width="1.5"/>
+
+  <!-- Cyan Underglow Aura -->
+  <ellipse cx="256" cy="374" rx="144" ry="22" fill="#22d3ee" opacity="0.32" filter="url(#glow)"/>
+
+  <!-- Keycap Base (Thicker Darker Bottom Edge for 3D Depth) -->
+  <rect x="104" y="106" width="304" height="268" rx="38" fill="url(#keycapBaseGrad)"/>
+
+  <!-- Cyan Edge Light Along Bottom Rim -->
+  <path d="M 142 374 Q 256 380 370 374" fill="none" stroke="#22d3ee" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- Keycap Top Face -->
+  <rect x="116" y="116" width="280" height="224" rx="28" fill="url(#keycapTopGrad)" stroke="url(#topBorderGrad)" stroke-width="1.5"/>
+
+  <!-- Keycap Top Edge Specular Reflection -->
+  <path d="M 148 125 L 364 125" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" opacity="0.12"/>
+
+  <!-- Centered "68" Keycap Legend -->
+  <text x="256" y="226" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="140" fill="#ffffff" text-anchor="middle" dominant-baseline="central" letter-spacing="-3px">68</text>
+
+  <!-- Hall-Effect Magnetic Field Hint (3 Concentric Arcs) -->
+  <g fill="none" stroke="#22d3ee" stroke-linecap="round">
+    <path d="M 224 398 C 238 410, 274 410, 288 398" stroke-width="5" opacity="0.95"/>
+    <path d="M 200 420 C 222 436, 290 436, 312 420" stroke-width="4.5" opacity="0.75"/>
+    <path d="M 176 442 C 206 462, 306 462, 336 442" stroke-width="4" opacity="0.50"/>
+  </g>
+</svg>

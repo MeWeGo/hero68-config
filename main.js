@@ -4,6 +4,10 @@ const path = require("path");
 const VENDOR_ID = 0x372e;
 const PRODUCT_ID = 0x103e;
 
+// Windows groups and labels taskbar buttons by this ID; it matches build.appId in package.json.
+// (Not app.setName(): that would move the userData folder and lose saved macros/settings.)
+app.setAppUserModelId("io.github.mewego.hero68config");
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1240,
@@ -13,6 +17,7 @@ function createWindow() {
     backgroundColor: "#111216",
     autoHideMenuBar: true,
     title: "HERO 68 Config",
+    icon: path.join(__dirname, "src", "assets", "icon.png"),
     // backgroundThrottling off: music rhythm must keep streaming 30 fps while minimised or behind other windows
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
