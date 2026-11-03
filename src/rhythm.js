@@ -101,6 +101,25 @@ function centerVu(e, a) {
   return out;
 }
 
+// Circle VU: like Center VU but round. A disc grows from the middle of the board with loudness,
+// with a little extra kick on beats. Keys are about as tall as they are wide, so col/row distance is circular.
+function circleVu(e, a) {
+  const st = e.state("circle", () => ({ r: 0 }));
+  const cx = (COLS - 1) / 2, cy = (ROWS - 1) / 2;
+  const maxR = Math.hypot(cx, cy) + 0.6;
+  const target = Math.min(1, a.energy * 1.25 + (a.beat ? 0.15 : 0)) * maxR;
+  st.r = target > st.r ? target : st.r * e.decay + target * (1 - e.decay); // jump out, ease back in
+  const out = new Map();
+  for (const k of e.keys) {
+    const d = Math.hypot(k.col - cx, k.row - cy);
+    if (d > st.r) continue;
+    const t = d / maxR;
+    const edge = Math.min(1, (st.r - d) / 0.8 + 0.35); // soft rim
+    out.set(k.pos, scale(e.color(t, t < 0.4 ? GREEN : t < 0.7 ? YELLOW : RED), edge));
+  }
+  return out;
+}
+
 // Ripple: every beat drops a ring that expands across the board.
 function ripple(e, a) {
   const st = e.state("ripple", () => ({ rings: [] }));
@@ -178,6 +197,7 @@ export const EFFECTS = [
   { id: "fire", name: "Fire", fn: fire },
   { id: "ripple", name: "Beat ripple", fn: ripple },
   { id: "center", name: "Center VU", fn: centerVu },
+  { id: "circle", name: "Circle VU", fn: circleVu },
   { id: "flow", name: "Rainbow flow", fn: rainbowFlow },
   { id: "wave", name: "Sound wave", fn: wave },
   { id: "pulse", name: "Bass pulse", fn: pulse },
