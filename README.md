@@ -44,7 +44,7 @@ named after the tag.
 | Performance | Per-key actuation point (0.10–4.00 mm) and Rapid Trigger press/release sensitivity (0.01–4.00 mm). Drag or Ctrl+click to multi-select. |
 | Keymap | Remap any key on the Base / Fn1 / Fn2 layers, including media, mouse, shortcut combos, and the board's own functions (profiles, lighting controls). |
 | Lighting | Main RGB mode/colour/brightness/speed, side light, per-key colours (for the "Custom" mode). |
-| Music rhythm | Keys react to whatever your PC is playing: spectrum bars, sound wave, bass pulse, sparkle. Sensitivity, smoothing and palette, live preview on the on-screen board. |
+| Music rhythm | Keys react to whatever your PC is playing: Rock, spectrum bars, fire, beat ripple, center VU, rainbow flow, sound wave, bass pulse, sparkle. Sensitivity, smoothing and palette, live preview on the on-screen board. |
 | Settings | Polling rate (125 Hz – 8 kHz), Win-key lock, Mac mode, device info. |
 | Header | Switch between onboard profiles P1–P3. |
 
