@@ -1,4 +1,5 @@
-import { HeroKeyboard, POLLING_RATES } from "./protocol.js";
+import { HeroKeyboard, POLLING_RATES, VENDOR_ID, PRODUCT_ID } from "./protocol.js";
+import { RhythmService, EFFECTS, OFF, DOWNLOAD_URL } from "./rhythm.js";
 import LAYOUT from "./data/layout68.js";
 import KEYCODES from "./data/keycodes.js";
 import { MAIN_MODES, SIDE_MODES, MAIN_LIMITS, SIDE_LIMITS } from "./data/lighting.js";
@@ -208,6 +209,7 @@ function render() {
   }
   $("#selCount").textContent = `${state.selected.size} selected`;
   if (state.tab === "keymap") updateKeymapTitle();
+  paintPreview();
 }
 
 // ---- tabs ------------------------------------------------------------------
@@ -257,6 +259,8 @@ async function loadAll() {
   const kb = state.kb;
   busy("Reading device info…");
   const [fw, uuid] = [await kb.getFirmware(), await kb.getUuid()];
+  state.uuid = uuid;
+  rhythmState.inited = false;
   setConnected(true, `HERO 68 HE · fw ${fw.text}`);
 
   busy("Reading profile…");
@@ -294,6 +298,7 @@ async function loadAll() {
   const first = [...state.selected][0] ?? 43;
   loadPerfControls(first);
   render();
+  refreshRhythm();
 }
 
 $("#connect").addEventListener("click", () => connect(true));
@@ -532,6 +537,154 @@ $("#paint").addEventListener("click", () => {
     else toast(`Painted ${keys.length} keys`);
   });
 });
+
+// ---- music rhythm ----------------------------------------------------------
+
+const rhythm = new RhythmService();
+const rhythmState = { inited: false, current: OFF, params: {} };
+const KEEP_KEY = "rhythm-keep-running";
+
+function setRhythmStatus(text, cls = "") {
+  const s = $("#rhythmStatus");
+  s.textContent = text;
+  s.className = "pill " + cls;
+}
+
+async function refreshRhythm() {
+  const live = rhythm.connected;
+  $("#rhythmMissing").hidden = live;
+  $("#rhythmBody").hidden = !live;
+  if (!live) {
+    setRhythmStatus("Service not running");
+    setRhythmRunning(false);
+    return;
+  }
+  try {
+    if (state.kb && !rhythmState.inited) {
+      await rhythm.init({ vendorId: VENDOR_ID, productId: PRODUCT_ID, uuid: state.uuid });
+      rhythmState.inited = true;
+    }
+    const { available, current } = await rhythm.getEffects();
+    const effects = EFFECTS.filter((e) => e.type === OFF || available.includes(e.type));
+    $("#rhythmEffect").innerHTML = effects.map((e) => `<option value="${e.type}">${e.name}</option>`).join("");
+    $("#rhythmEffect").value = String(current);
+    rhythmState.current = current;
+    rhythmState.params = await rhythm.getParams(current);
+    buildRhythmParams();
+    setRhythmRunning(current !== OFF);
+  } catch (e) {
+    setRhythmStatus("Error", "");
+    toast(e.message, true);
+  }
+}
+
+function setRhythmRunning(on) {
+  setRhythmStatus(on ? "Live" : rhythm.connected ? `Service v${rhythm.version ?? "?"}` : "Service not running", on ? "live" : rhythm.connected ? "on" : "");
+  mainCard.classList.toggle("disabled", on);
+  $(".rhythm-note", mainCard).hidden = !on;
+  if (!on) {
+    preview = null;
+    paintPreview();
+  }
+}
+
+function buildRhythmParams() {
+  const box = $("#rhythmParams");
+  box.innerHTML = "";
+  const effect = EFFECTS.find((e) => e.type === rhythmState.current);
+  for (const p of effect?.params ?? []) {
+    const value = rhythmState.params[p.prop];
+    const row = document.createElement("div");
+    row.innerHTML = `<label class="lbl">${p.name}</label>`;
+    const send = debounce((v) => rhythm.setParam(p.prop, v).catch((e) => toast(e.message, true)), 200);
+    if (p.type === "slider") {
+      row.insertAdjacentHTML("beforeend", `<div class="slider-row"><input type="range" min="${p.min}" max="${p.max}" value="${value ?? p.min}" /><output>${value ?? p.min}</output></div>`);
+      const input = $("input", row);
+      input.oninput = () => {
+        $("output", row).textContent = input.value;
+        send(input.value);
+      };
+    } else if (p.type === "select") {
+      row.insertAdjacentHTML("beforeend", `<select>${p.options.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select>`);
+      const sel = $("select", row);
+      if (value !== undefined) sel.value = String(value);
+      sel.onchange = () => send(sel.value);
+    } else if (p.type === "color") {
+      const sw = document.createElement("div");
+      sw.className = "swatches";
+      const current = String(value ?? "mcolor").toLowerCase();
+      const pick = (v, btn) => {
+        $$("button", sw).forEach((b) => b.classList.toggle("active", b === btn));
+        send(v);
+      };
+      for (const c of p.presets) {
+        const b = document.createElement("button");
+        if (c === "mcolor") b.className = "multi", (b.title = "Multicolour");
+        else b.style.background = c;
+        if (current === c.replace("#", "")) b.classList.add("active");
+        b.onclick = () => pick(c, b);
+        sw.append(b);
+      }
+      const custom = document.createElement("input");
+      custom.type = "color";
+      custom.title = "Custom colour";
+      if (/^[0-9a-f]{6}$/.test(current)) custom.value = "#" + current;
+      custom.oninput = () => pick(custom.value, null);
+      sw.append(custom);
+      row.append(sw);
+    }
+    box.append(row);
+  }
+}
+
+$("#rhythmEffect").addEventListener("change", (e) => {
+  const type = Number(e.target.value);
+  guarded("Switching rhythm effect…", async () => {
+    await rhythm.setEffect(type);
+    rhythmState.current = type;
+    rhythmState.params = await rhythm.getParams(type);
+    buildRhythmParams();
+    setRhythmRunning(type !== OFF);
+    // the firmware restores normal lighting a few seconds after rhythm stops
+    if (type === OFF && state.kb) setTimeout(async () => syncLightCard(mainCard, (state.main = await state.kb.getLight())), 3500);
+  });
+});
+
+$("#rhythmDownload").addEventListener("click", () => window.open(DOWNLOAD_URL));
+
+const keep = $("#rhythmKeep");
+try {
+  keep.checked = localStorage.getItem(KEEP_KEY) === "1";
+} catch {}
+keep.addEventListener("change", () => {
+  try {
+    localStorage.setItem(KEEP_KEY, keep.checked ? "1" : "0");
+  } catch {}
+});
+window.addEventListener("beforeunload", () => {
+  if (!keep.checked && rhythmState.current !== OFF) rhythm.stopNow();
+});
+
+// live preview of what the service is sending to the keyboard
+let preview = null;
+let previewQueued = false;
+function paintPreview() {
+  previewQueued = false;
+  const on = state.tab === "lighting" && preview && rhythmState.current !== OFF;
+  for (const [pos, el] of keyEls) {
+    const c = on ? (preview.all ?? preview.get(pos)) : null;
+    el.style.backgroundColor = c ? `rgba(${c.r},${c.g},${c.b},0.55)` : "";
+  }
+}
+rhythm.onFrame = (f) => {
+  preview = f;
+  if (!previewQueued) {
+    previewQueued = true;
+    requestAnimationFrame(paintPreview);
+  }
+};
+rhythm.onChange = () => refreshRhythm();
+rhythm.start();
 
 // ---- settings --------------------------------------------------------------
 

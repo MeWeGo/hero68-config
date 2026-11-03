@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 
 const VENDOR_ID = 0x372e;
@@ -26,6 +26,12 @@ function createWindow() {
   });
   ses.setPermissionCheckHandler((_wc, permission) => permission === "hid");
   ses.setDevicePermissionHandler((d) => d.deviceType === "hid" && isHero(d.device));
+
+  // Links (e.g. the music-service download) open in the user's browser, never inside the app.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) shell.openExternal(url);
+    return { action: "deny" };
+  });
 
   win.loadFile(path.join(__dirname, "src", "index.html"));
 }

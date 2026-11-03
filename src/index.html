@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws://localhost:5170" />
     <title>HERO 68 Config</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -96,8 +96,21 @@
       </section>
 
       <section class="panel" data-panel="lighting" hidden>
+        <div class="card" id="rhythmCard">
+          <h3>Music rhythm <span class="pill" id="rhythmStatus">Looking for service…</span></h3>
+          <div id="rhythmMissing">
+            <p class="muted">Lights the keys to whatever your PC is playing. Needs AULA's free music service (HEROMusicServe.exe) running in the background, the same one the AULA website uses.</p>
+            <button id="rhythmDownload">Download music service</button>
+          </div>
+          <div id="rhythmBody" hidden>
+            <select id="rhythmEffect"></select>
+            <div id="rhythmParams" class="params"></div>
+            <label class="check"><input type="checkbox" id="rhythmKeep" /> Keep running after closing this app</label>
+          </div>
+        </div>
         <div class="card" id="mainLight">
           <h3>Main lighting</h3>
+          <p class="muted rhythm-note" hidden>Music rhythm is driving the keys. Set it to Off to use these.</p>
           <select class="mode"></select>
           <div class="row">
             <input type="color" class="color" />
