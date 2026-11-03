@@ -44,13 +44,13 @@ named after the tag.
 | Performance | Per-key actuation point (0.10–4.00 mm) and Rapid Trigger press/release sensitivity (0.01–4.00 mm). Drag or Ctrl+click to multi-select. |
 | Keymap | Remap any key on the Base / Fn1 / Fn2 layers, including media, mouse, shortcut combos, and the board's own functions (profiles, lighting controls). |
 | Lighting | Main RGB mode/colour/brightness/speed, side light, per-key colours (for the "Custom" mode). |
-| Music rhythm | Keys react to whatever your PC is playing: 6 effects, gain/smoothing/palette, live preview on the on-screen board. |
+| Music rhythm | Keys react to whatever your PC is playing: spectrum bars, sound wave, bass pulse, sparkle. Sensitivity, smoothing and palette, live preview on the on-screen board. |
 | Settings | Polling rate (125 Hz – 8 kHz), Win-key lock, Mac mode, device info. |
 | Header | Switch between onboard profiles P1–P3. |
 
-**Music rhythm** needs AULA's free background service `HEROMusicServe.exe`, the same one the AULA website uses
-(the app links to the download). It captures system audio and drives the keys itself. This app talks to it
-over `ws://localhost:5170`; the text protocol is documented at the top of `src/rhythm.js`.
+**Music rhythm** is built in. Unlike the AULA website, it needs no `HEROMusicServe.exe`. The app captures
+system audio itself (WASAPI loopback), analyses it, and streams frames to the keyboard at 30 fps. It uses
+about 1% CPU, and only while an effect is running.
 
 Not done yet: macros, advanced keys (DKS, mod-tap, toggle, SOCD), switch calibration, sleep timer.
 The protocol for all of these is in the official bundle (see `Lt` class notes below) if you want to add them.
@@ -87,6 +87,11 @@ The `len` byte in a reply isn't always right (firmware reports 1 but carries 2 b
 | `99` | `19` | rapid trigger | entries `pos u16, enable, release u16, press u16, custom 0/1` (≤6/packet) |
 | `86` | `06` | per-key RGB | entries `pos u16, r, g, b`. Writes are multi-packet using `[3]`/`[4]` |
 | – | `11 <layer>` | reset layer | data `01` |
+| – | `08 02` | live colour, whole board | `r, g, b`. No ack |
+| – | `08 01` | live colour, per key | groups `[r, g, b, n, pos × n]…`, unlisted keys dark, split across packets with `[3]`/`[4]`. No ack |
+
+The `08` live stream was captured from AULA's music service with Frida (it isn't in the website's code).
+It isn't saved to flash: the board falls back to its saved lighting about 3 s after the last frame.
 
 **Keycodes** are 32-bit `TT MM KK LL`:
 - `00 00 00 xx` is a HID usage. `00 mm kk 00` is a modifier combo (mm: 1=Ctrl 2=Shift 4=Alt 8=Win).

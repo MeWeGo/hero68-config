@@ -170,11 +170,6 @@ input[type="search"] { background: var(--card); border: 1px solid var(--line); b
 .pill { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 500; padding: 2px 8px; border-radius: 20px; background: #2a2c35; color: var(--muted); }
 .pill.on { background: #14352b; color: #6ee7b7; }
 .pill.live { background: #3b2a12; color: #fcd34d; }
-.params { display: flex; flex-direction: column; gap: 6px; }
-.swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.swatches button { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
-.swatches button.active { border-color: var(--text); }
-.swatches .multi { background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red); }
 .card.disabled > :not(h3):not(.rhythm-note) { opacity: 0.4; pointer-events: none; }
 
 .info { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }

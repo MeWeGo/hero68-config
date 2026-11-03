@@ -1,164 +1,137 @@
-// Client for AULA's music-rhythm service (HEROMusicServe.exe), the same one the official web page drives.
-// The service captures system audio and animates the keyboard itself; we only send it commands over
-// a local WebSocket and receive colour frames for a live preview.
-//
-// Text protocol:   request  "<id>|<command>|<args...>"   reply "<id>|<code>|<data...>" (code 0 = ok)
-//   versions                       -> "1.0.2.8"
-//   init|USB:<vid>,<pid>,<report id>,<feature len>,<output len>|WIRELESS:NULL|CODE:<uuid hex>
-//   typs                           -> "Typs:169,170,...|Current:180"
-//   typConfig|<effect>             -> "gain:3|smooth:2|color:ff0000"
-//   change|mode|<effect>           switch effect (180 = off)
-//   change|<param>|<value>         tweak a parameter of the running effect
-// Unsolicited: "status|..." when the service state changes; binary frames of
-//   [r, g, b, count, pos x count]... (or a 4-byte [r, g, b, 255] meaning "every key").
+// Music rhythm: our own replacement for AULA's HEROMusicServe. Audio comes from AudioAnalyser,
+// frames go to the keyboard's live lighting stream (HeroKeyboard.streamKeys / streamAll).
 
-export const SERVICE_URL = "ws://localhost:5170";
-export const DOWNLOAD_URL = "https://hubx.pro/static/AppDir/HEROMusicServe.exe";
-export const OFF = 180;
+import { AudioAnalyser } from "./audio.js";
 
-const COLORS = ["mcolor", "#23fe26", "#ff4949", "#ff7200", "#fff005", "#00d70f", "#ee00f0", "#ff008a", "#00fefe"];
-const AUDIO = [
-  { prop: "gain", name: "Gain", type: "slider", min: 0, max: 20 },
-  { prop: "smooth", name: "Smoothing", type: "slider", min: 0, max: 8 },
-  { prop: "color", name: "Palette", type: "color", presets: COLORS },
-];
+const FPS = 30;
+const COLS = 15;
+const ROWS = 5;
 
 export const EFFECTS = [
-  { type: OFF, name: "Off", params: [] },
-  { type: 169, name: "Glorious (rock)", params: AUDIO },
-  { type: 428, name: "Dynamic spectrum", params: [
-    { prop: "colortype", name: "Display mode", type: "select", options: [
-      [0, "Green / yellow / red"], [1, "Rainbow"], [2, "Rainbow reversed"], [3, "Spectrum"], [4, "Spectrum cycle"],
-      [5, "White"], [6, "Red"], [7, "Orange"], [8, "Yellow"], [9, "Green"], [10, "Blue"], [12, "Dance with the song"],
-    ] },
-    { prop: "db", name: "Amplitude", type: "slider", min: 20, max: 100 },
-  ] },
-  { type: 168, name: "Gentle dance (soft)", params: AUDIO },
-  { type: 170, name: "Rising clouds (standard)", params: AUDIO },
-  { type: 171, name: "Light field (vocal)", params: [] },
-  { type: 172, name: "Flowing stream (standard)", params: AUDIO },
-  { type: 173, name: "Blooming flowers (passionate)", params: AUDIO },
+  { id: "off", name: "Off" },
+  { id: "spectrum", name: "Spectrum bars" },
+  { id: "wave", name: "Sound wave" },
+  { id: "pulse", name: "Bass pulse" },
+  { id: "sparkle", name: "Sparkle" },
 ];
 
-const ERRORS = {
-  1: "service could not parse its config", 2: "no effect configured", 4: "could not change gain",
-  5: "could not change smoothing", 6: "bad parameter", 7: "no config found", 8: "no audio output device found",
-  9: "keyboard not found by the service", 10: "bad parameter", 11: "bad message format",
-  12: "service config download failed", 13: "service is already in use by another app",
+export const PALETTES = [
+  { id: "classic", name: "Green → red" },
+  { id: "rainbow", name: "Rainbow" },
+  { id: "solid", name: "Single colour" },
+];
+
+const hsv = (h, s, v) => {
+  const f = (n) => {
+    const k = (n + h * 6) % 6;
+    return Math.round(255 * v * (1 - s * Math.max(0, Math.min(k, 4 - k, 1))));
+  };
+  return { r: f(5), g: f(3), b: f(1) };
 };
+const scale = (c, v) => ({ r: Math.round(c.r * v), g: Math.round(c.g * v), b: Math.round(c.b * v) });
+// fewer distinct colours = fewer groups = fewer packets per frame
+const quant = (c) => ({ r: c.r & 0xf0, g: c.g & 0xf0, b: c.b & 0xf0 });
 
-export class RhythmService {
-  constructor() {
-    this.ws = null;
-    this.connected = false;
-    this.version = null;
-    this.pending = new Map();
-    this.nextId = 1;
-    this.onChange = () => {}; // connection / state changed
-    this.onFrame = () => {}; // Map(pos -> {r,g,b}) or null
-    this._retry = null;
+export class RhythmEngine {
+  constructor(keys) {
+    // keys: [{pos, x, y, w, h}] -> column/row grid
+    const cx = keys.map((k) => k.x + k.w / 2), cy = keys.map((k) => k.y + k.h / 2);
+    const [x0, x1] = [Math.min(...cx), Math.max(...cx)];
+    const [y0, y1] = [Math.min(...cy), Math.max(...cy)];
+    this.keys = keys.map((k, i) => ({
+      pos: k.pos,
+      col: Math.min(COLS - 1, Math.floor(((cx[i] - x0) / (x1 - x0 + 1)) * COLS)),
+      row: Math.min(ROWS - 1, Math.floor(((cy[i] - y0) / (y1 - y0 + 1)) * ROWS)), // 0 = top
+    }));
+    this.audio = new AudioAnalyser();
+    this.kb = null;
+    this.effect = "off";
+    this.settings = { gain: 10, smooth: 4, palette: "classic", color: { r: 0, g: 220, b: 255 } };
+    this.onFrame = () => {};
+    this._timer = null;
+    this._levels = new Array(COLS).fill(0);
+    this._wave = new Array(COLS).fill(0);
+    this._hue = 0;
+    this._sparks = new Map();
+    this._tick = 0;
   }
 
-  start() {
-    if (this.ws) return;
-    const ws = new WebSocket(SERVICE_URL);
-    ws.binaryType = "arraybuffer";
-    this.ws = ws;
-    ws.onopen = async () => {
-      this.connected = true;
-      try {
-        this.version = (await this.request("versions"))[0];
-      } catch {}
-      this.onChange();
-    };
-    ws.onmessage = (e) => (typeof e.data === "string" ? this._onText(e.data) : this.onFrame(parseFrame(e.data)));
-    ws.onclose = () => {
-      const was = this.connected;
-      this.ws = null;
-      this.connected = false;
-      for (const p of this.pending.values()) p.reject(new Error("Music service disconnected"));
-      this.pending.clear();
-      if (was) this.onChange();
-      this._retry = setTimeout(() => this.start(), 2000); // keep looking for the service
-    };
+  get running() {
+    return this.effect !== "off";
   }
 
-  _onText(msg) {
-    const bar = msg.indexOf("|");
-    const id = bar > 0 ? msg.slice(0, bar) : msg;
-    const p = this.pending.get(id);
-    if (!p) {
-      if (msg.startsWith("status") || msg.startsWith("static")) this.onChange();
+  async setEffect(id) {
+    if (id === "off") return this.stop();
+    if (!this.audio.running) await this.audio.start();
+    this.effect = id;
+    this._timer ??= setInterval(() => this._frame(), 1000 / FPS);
+  }
+
+  stop() {
+    clearInterval(this._timer);
+    this._timer = null;
+    this.effect = "off";
+    this.audio.stop();
+    this.onFrame(null);
+    // the keyboard returns to its saved lighting by itself ~3 s after the last frame
+  }
+
+  _color(level, col, row) {
+    const s = this.settings;
+    if (s.palette === "rainbow") return hsv((col / COLS + this._hue) % 1, 1, 1);
+    if (s.palette === "solid") return s.color;
+    // classic VU colours by height: green, green, yellow, orange, red
+    return [{ r: 0, g: 255, b: 0 }, { r: 0, g: 255, b: 0 }, { r: 255, g: 220, b: 0 }, { r: 255, g: 110, b: 0 }, { r: 255, g: 0, b: 0 }][
+      ROWS - 1 - row
+    ];
+  }
+
+  _frame() {
+    const s = this.settings;
+    const gain = 0.25 + s.gain / 10; // slider 0..20 -> 0.25x..2.25x
+    const decay = 0.5 + s.smooth * 0.06; // slider 0..8 -> fast..slow fall-off
+    const raw = this.audio.bands(COLS, gain);
+    this._levels = raw.map((v, i) => Math.max(v, this._levels[i] * decay));
+    this._hue = (this._hue + 0.003) % 1;
+    this._tick++;
+
+    const frame = new Map();
+    const L = this._levels;
+    if (this.effect === "spectrum") {
+      for (const k of this.keys) {
+        const lit = Math.round(L[k.col] * ROWS);
+        if (ROWS - k.row <= lit) frame.set(k.pos, quant(this._color(L[k.col], k.col, k.row)));
+      }
+    } else if (this.effect === "wave") {
+      // loudness scrolls left -> right, one column every other frame
+      if (this._tick % 2 === 0) this._wave = [Math.max(...L.slice(0, 5)), ...this._wave.slice(0, -1)];
+      for (const k of this.keys) {
+        const v = this._wave[k.col];
+        if (v > 0.08) frame.set(k.pos, quant(scale(this._color(v, k.col, ROWS - 1 - Math.round(v * (ROWS - 1))), v)));
+      }
+    } else if (this.effect === "pulse") {
+      const bass = Math.min(1, (L[0] + L[1] + L[2]) / 3);
+      const v = bass * bass;
+      const c = s.palette === "solid" ? s.color : s.palette === "rainbow" ? hsv(this._hue, 1, 1) : hsv(0.33 - bass * 0.33, 1, 1);
+      const out = quant(scale(c, v));
+      this.kb?.streamAll(out);
+      this.onFrame({ all: out });
       return;
+    } else if (this.effect === "sparkle") {
+      // random keys flash on transients and fade out
+      const energy = L.reduce((a, b) => a + b, 0) / COLS;
+      const spawn = Math.floor(energy * energy * 10);
+      for (let i = 0; i < spawn; i++) {
+        const k = this.keys[(Math.random() * this.keys.length) | 0];
+        this._sparks.set(k.pos, { v: 1, c: this._color(1, k.col, (Math.random() * ROWS) | 0) });
+      }
+      for (const [pos, sp] of this._sparks) {
+        sp.v *= decay;
+        if (sp.v < 0.08) this._sparks.delete(pos);
+        else frame.set(pos, quant(scale(sp.c, sp.v)));
+      }
     }
-    this.pending.delete(id);
-    clearTimeout(p.timer);
-    const [code, ...data] = msg.slice(bar + 1).split("|");
-    code === "0" ? p.resolve(data) : p.reject(new Error("Music service: " + (ERRORS[code] ?? `error ${code}`)));
+    this.kb?.streamKeys(frame);
+    this.onFrame(frame);
   }
-
-  request(cmd, timeout = 5000) {
-    if (!this.connected) return Promise.reject(new Error("Music service is not running"));
-    const id = `id_${Date.now()}_${this.nextId++}`;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Music service did not answer "${cmd}"`));
-      }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
-      this.ws.send(`${id}|${cmd}`);
-    });
-  }
-
-  // Tell the service which keyboard to drive (wired, output report 9, 63 + 1 bytes).
-  async init({ vendorId, productId, uuid }) {
-    const hex = (v) => "0x" + v.toString(16);
-    await this.request(`init|USB:${hex(vendorId)},${hex(productId)},0x9,0,64|WIRELESS:NULL|CODE:${uuid.toString(16)}`);
-  }
-
-  async getEffects() {
-    const kv = parseKv(await this.request("typs"));
-    const available = String(kv.Typs ?? "").split(",").map(Number);
-    return { available, current: Number(kv.Current ?? OFF) };
-  }
-
-  async getParams(type) {
-    return type === OFF ? {} : parseKv(await this.request(`typConfig|${type}`));
-  }
-
-  // Fire-and-forget stop, usable from beforeunload where we can't await a reply.
-  stopNow() {
-    if (this.connected) this.ws.send(`id_${Date.now()}_${this.nextId++}|change|mode|${OFF}`);
-  }
-
-  setEffect(type) {
-    return this.request(`change|mode|${type}`);
-  }
-
-  setParam(prop, value) {
-    if (prop === "color") value = String(value).replace("#", "");
-    return this.request(`change|${prop}|${value}`);
-  }
-}
-
-function parseKv(parts) {
-  const out = {};
-  for (const p of parts) {
-    const [k, v] = p.split(":");
-    if (k) out[k] = v === undefined || isNaN(Number(v)) ? v : Number(v);
-  }
-  return out;
-}
-
-function parseFrame(buf) {
-  const b = new Uint8Array(buf);
-  if (b.length < 5) return b.length === 4 && b[3] === 255 ? { all: { r: b[0], g: b[1], b: b[2] } } : null;
-  const keys = new Map();
-  for (let i = 0; i + 4 <= b.length; ) {
-    const color = { r: b[i], g: b[i + 1], b: b[i + 2] };
-    const end = Math.min(i + 4 + b[i + 3], b.length);
-    for (let j = i + 4; j < end; j++) keys.set(b[j], color);
-    i = end;
-  }
-  return keys;
 }

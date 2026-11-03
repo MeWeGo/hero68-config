@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, desktopCapturer } = require("electron");
 const path = require("path");
 
 const VENDOR_ID = 0x372e;
@@ -13,7 +13,8 @@ function createWindow() {
     backgroundColor: "#111216",
     autoHideMenuBar: true,
     title: "HERO 68 Config",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    // backgroundThrottling off: music rhythm must keep streaming 30 fps while minimised or behind other windows
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
 
   const ses = win.webContents.session;
@@ -24,8 +25,15 @@ function createWindow() {
     event.preventDefault();
     callback(details.deviceList.find(isHero)?.deviceId ?? "");
   });
-  ses.setPermissionCheckHandler((_wc, permission) => permission === "hid");
+  ses.setPermissionCheckHandler((_wc, permission) => permission === "hid" || permission === "media");
   ses.setDevicePermissionHandler((d) => d.deviceType === "hid" && isHero(d.device));
+
+  // Music rhythm: getDisplayMedia() gets the PC's playback audio (WASAPI loopback) without a picker.
+  // A screen source is required alongside it; the renderer stops that video track immediately.
+  ses.setDisplayMediaRequestHandler(async (_req, callback) => {
+    const [screen] = await desktopCapturer.getSources({ types: ["screen"] });
+    callback({ video: screen, audio: "loopback" });
+  });
 
   // Links (e.g. the music-service download) open in the user's browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {

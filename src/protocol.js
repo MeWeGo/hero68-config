@@ -222,6 +222,52 @@ export class HeroKeyboard {
     }
   }
 
+  // ---- live lighting stream (music rhythm) ---------------------------------
+  // cmd 0x08, captured from AULA's music service. Fire-and-forget, no ack; the board drops back to
+  // its saved lighting ~3 s after the last frame, and nothing here is written to flash.
+  //   08 02: whole board one colour   data = r, g, b
+  //   08 01: colour groups            data = [r, g, b, n, pos x n]...  (keys not listed are dark)
+
+  streamAll({ r, g, b }) {
+    return this._stream([[0x08, 2, 0, 1, 0, 3, r, g, b]]);
+  }
+
+  // colors: Map(pos -> {r,g,b}); black keys can be left out.
+  streamKeys(colors) {
+    const groups = new Map();
+    for (const [pos, c] of colors) {
+      if (!(c.r | c.g | c.b)) continue;
+      const key = (c.r << 16) | (c.g << 8) | c.b;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(pos);
+    }
+    // pack groups into <= 56-byte payloads, splitting a group across packets if needed
+    const payloads = [[]];
+    for (const [key, positions] of groups) {
+      let rest = positions;
+      while (rest.length) {
+        let cur = payloads[payloads.length - 1];
+        if (56 - cur.length < 5) payloads.push((cur = []));
+        const take = rest.slice(0, 56 - cur.length - 4);
+        cur.push(key >> 16, (key >> 8) & 255, key & 255, take.length, ...take);
+        rest = rest.slice(take.length);
+      }
+    }
+    if (!payloads[0].length) return this.streamAll({ r: 0, g: 0, b: 0 });
+    return this._stream(payloads.map((d, i) => [0x08, 1, 0, payloads.length, i, d.length, ...d]));
+  }
+
+  async _stream(packets) {
+    if (this._streaming) return; // drop the frame rather than queue behind a slow one
+    this._streaming = true;
+    try {
+      for (const p of packets) await this.device.sendReport(REPORT_ID, this._build(p));
+    } catch {
+    } finally {
+      this._streaming = false;
+    }
+  }
+
   // ---- profiles -----------------------------------------------------------
 
   async getProfile() {
