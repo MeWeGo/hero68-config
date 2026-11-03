@@ -1,0 +1,46 @@
+{
+  "name": "hero68-config",
+  "version": "0.1.0",
+  "description": "Open desktop configurator for the AULA HERO 68 HE keyboard",
+  "main": "main.js",
+  "private": true,
+  "author": "Ali Efe",
+  "license": "MIT",
+  "repository": "github:MeWeGo/hero68-config",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "io.github.mewego.hero68config",
+    "productName": "HERO 68 Config",
+    "files": [
+      "main.js",
+      "src/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "HERO68-Config-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "HERO68-Config-Portable-${version}.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^38.8.6",
+    "electron-builder": "^26.18.0"
+  },
+  "allowScripts": {
+    "electron@38.8.6": true
+  }
+}

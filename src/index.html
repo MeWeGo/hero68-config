@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+    <title>HERO 68 Config</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">HERO<b>68</b></span>
+        <span class="status" id="status"><i></i><span>Not connected</span></span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button data-tab="performance" class="active">Performance</button>
+        <button data-tab="keymap">Keymap</button>
+        <button data-tab="lighting">Lighting</button>
+        <button data-tab="settings">Settings</button>
+      </nav>
+      <div class="right">
+        <div class="seg" id="profiles" title="Onboard profile">
+          <button data-profile="0">P1</button><button data-profile="1">P2</button><button data-profile="2">P3</button>
+        </div>
+        <button class="primary" id="connect">Connect</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="board-wrap">
+        <div class="board-tools" id="boardTools">
+          <div class="seg" id="layers" hidden>
+            <button data-layer="0" class="active">Base</button><button data-layer="1">Fn1</button><button data-layer="2">Fn2</button>
+          </div>
+          <div class="sel-tools">
+            <button data-sel="all">Select all</button>
+            <button data-sel="wasd">WASD</button>
+            <button data-sel="invert">Invert</button>
+            <button data-sel="none">Clear</button>
+            <span class="hint" id="selCount">0 selected</span>
+          </div>
+        </div>
+        <div class="board" id="board"></div>
+        <div class="loading" id="loading" hidden><div class="spinner"></div><span id="loadingText">Loading…</span></div>
+        <div class="empty" id="empty">
+          <h2>Plug in your HERO 68 HE and hit Connect</h2>
+          <p>Wired (USB) connection required. Close the AULA web page in other browsers first.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="performance">
+        <div class="card">
+          <h3>Actuation point</h3>
+          <div class="slider-row">
+            <input type="range" id="actuation" min="10" max="400" step="1" value="100" />
+            <output id="actuationOut">1.00 mm</output>
+          </div>
+          <p class="muted">How far the key travels before it registers. 0.10 – 4.00 mm.</p>
+        </div>
+        <div class="card">
+          <h3>
+            Rapid Trigger
+            <label class="switch"><input type="checkbox" id="rtEnabled" /><span></span></label>
+          </h3>
+          <label class="lbl">Press sensitivity</label>
+          <div class="slider-row">
+            <input type="range" id="rtPress" min="1" max="400" step="1" value="10" />
+            <output id="rtPressOut">0.10 mm</output>
+          </div>
+          <label class="lbl">Release sensitivity</label>
+          <div class="slider-row">
+            <input type="range" id="rtRelease" min="1" max="400" step="1" value="10" />
+            <output id="rtReleaseOut">0.10 mm</output>
+          </div>
+        </div>
+        <div class="card actions">
+          <button class="primary big" id="applyPerf">Apply to selected keys</button>
+          <p class="muted">Click a key to load its values. Drag or Ctrl+click to select several.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="keymap" hidden>
+        <div class="card grow">
+          <div class="picker-head">
+            <h3 id="keymapTitle">Select a key to remap</h3>
+            <input type="search" id="pickerSearch" placeholder="Search keys…" />
+          </div>
+          <div class="chips" id="pickerGroups"></div>
+          <div class="picker" id="picker"></div>
+        </div>
+        <div class="card narrow actions">
+          <button id="resetKey">Reset selected to default</button>
+          <button class="danger" id="resetLayer">Reset whole layer</button>
+          <p class="muted">Highlighted keys differ from the factory layout.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="lighting" hidden>
+        <div class="card" id="mainLight">
+          <h3>Main lighting</h3>
+          <select class="mode"></select>
+          <div class="row">
+            <input type="color" class="color" />
+            <label class="check"><input type="checkbox" class="rainbow" /> Rainbow</label>
+          </div>
+          <label class="lbl">Brightness</label>
+          <div class="slider-row"><input type="range" class="bright" min="0" /><output></output></div>
+          <label class="lbl">Speed</label>
+          <div class="slider-row"><input type="range" class="speed" min="0" /><output></output></div>
+        </div>
+        <div class="card" id="sideLight">
+          <h3>Side light</h3>
+          <select class="mode"></select>
+          <div class="row">
+            <input type="color" class="color" />
+            <label class="check"><input type="checkbox" class="rainbow" /> Rainbow</label>
+          </div>
+          <label class="lbl">Brightness</label>
+          <div class="slider-row"><input type="range" class="bright" min="0" /><output></output></div>
+          <label class="lbl">Speed</label>
+          <div class="slider-row"><input type="range" class="speed" min="0" /><output></output></div>
+        </div>
+        <div class="card actions">
+          <h3>Per-key colour</h3>
+          <div class="row"><input type="color" id="paintColor" value="#00e0ff" /><button class="primary" id="paint">Paint selected</button></div>
+          <p class="muted">Shows when main mode is “Custom (per-key)”.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="settings" hidden>
+        <div class="card">
+          <h3>Polling rate</h3>
+          <select id="polling"></select>
+        </div>
+        <div class="card">
+          <h3>Toggles</h3>
+          <label class="check"><input type="checkbox" id="winLock" /> Windows key lock</label>
+          <label class="check"><input type="checkbox" id="macMode" /> Mac mode</label>
+        </div>
+        <div class="card">
+          <h3>Device</h3>
+          <dl class="info" id="info"></dl>
+        </div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast"></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
