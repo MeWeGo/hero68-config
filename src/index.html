@@ -15,6 +15,8 @@
       <nav class="tabs" id="tabs">
         <button data-tab="performance" class="active">Performance</button>
         <button data-tab="keymap">Keymap</button>
+        <button data-tab="advanced">Advanced keys</button>
+        <button data-tab="macros">Macros</button>
         <button data-tab="lighting">Lighting</button>
         <button data-tab="settings">Settings</button>
       </nav>
@@ -73,6 +75,22 @@
             <output id="rtReleaseOut">0.10 mm</output>
           </div>
         </div>
+        <div class="card">
+          <h3>
+            Dead zones
+            <label class="switch"><input type="checkbox" id="dzEnabled" /><span></span></label>
+          </h3>
+          <label class="lbl">Top dead zone (ignored travel at the start)</label>
+          <div class="slider-row">
+            <input type="range" id="dzTop" min="0" max="50" step="1" value="0" />
+            <output id="dzTopOut">0.00 mm</output>
+          </div>
+          <label class="lbl">Bottom dead zone (ignored travel at the end)</label>
+          <div class="slider-row">
+            <input type="range" id="dzBottom" min="0" max="50" step="1" value="0" />
+            <output id="dzBottomOut">0.00 mm</output>
+          </div>
+        </div>
         <div class="card actions">
           <button class="primary big" id="applyPerf">Apply to selected keys</button>
           <p class="muted">Click a key to load its values. Drag or Ctrl+click to select several.</p>
@@ -92,6 +110,53 @@
           <button id="resetKey">Reset selected to default</button>
           <button class="danger" id="resetLayer">Reset whole layer</button>
           <p class="muted">Highlighted keys differ from the factory layout.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="advanced" hidden>
+        <div class="card grow">
+          <h3 id="advTitle">Select a key</h3>
+          <select id="advType">
+            <option value="">None (normal key)</option>
+            <option value="DKS">DKS: up to 4 actions at different press depths</option>
+            <option value="MT">Mod-tap: one action on tap, another on hold</option>
+            <option value="TGL">Toggle: tap to latch on/off, hold for normal</option>
+            <option value="SOCD">SOCD / snap tap: two keys cancel or prioritise each other</option>
+            <option value="MPT">Multi-point: 3 actions at 3 depths</option>
+            <option value="END">Release key: sends a key when released</option>
+          </select>
+          <div id="advEditor" class="adv-editor"></div>
+        </div>
+        <div class="card narrow actions">
+          <button class="primary big" id="advSave">Save to key</button>
+          <button id="advRemove">Remove from key</button>
+          <p class="muted">Pick a layer and a key on the board. Keys with an advanced function are marked.</p>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="macros" hidden>
+        <div class="card narrow">
+          <h3>Macros</h3>
+          <div id="macroList" class="macro-list"></div>
+          <div class="row"><input type="text" id="macroName" placeholder="New macro name" maxlength="24" /><button id="macroAdd">Add</button></div>
+        </div>
+        <div class="card grow">
+          <h3 id="macroTitle">No macro selected</h3>
+          <div class="row wrap">
+            <button class="primary" id="macroRecord">● Record</button>
+            <select id="macroMouse"><option value="">+ Mouse click…</option></select>
+            <label class="lbl">All delays</label><input type="number" id="macroAllDelay" min="0" max="60000" placeholder="ms" class="num" />
+            <button id="macroClear">Clear</button>
+            <button class="danger" id="macroDelete">Delete macro</button>
+          </div>
+          <div id="macroEvents" class="macro-events"></div>
+        </div>
+        <div class="card narrow actions">
+          <h3>Bind to key</h3>
+          <select id="macroMode"></select>
+          <div class="row" id="macroCountRow"><label class="lbl">Times</label><input type="number" id="macroCount" min="1" max="255" value="1" class="num" /></div>
+          <button class="primary big" id="macroBind">Bind to selected key</button>
+          <p class="muted">Uses the layer chosen above the board. Macros are kept in this app, because the keyboard can't send them back.</p>
         </div>
       </section>
 
@@ -151,6 +216,19 @@
           <h3>Toggles</h3>
           <label class="check"><input type="checkbox" id="winLock" /> Windows key lock</label>
           <label class="check"><input type="checkbox" id="macMode" /> Mac mode</label>
+          <label class="check"><input type="checkbox" id="autoCal" /> Automatic calibration</label>
+          <label class="check"><input type="checkbox" id="debounce" /> Debounce</label>
+        </div>
+        <div class="card">
+          <h3>Switch calibration</h3>
+          <p class="muted">Press every key slowly all the way down and let it go. Keys turn green once calibrated. Hit Finish when all keys are done.</p>
+          <button class="primary" id="calibrate">Start calibration</button>
+        </div>
+        <div class="card">
+          <h3>Profile backup</h3>
+          <p class="muted">Save everything in the current onboard profile (keymap, actuation, RT, dead zones, advanced keys, lighting, macros) to a file, or load one back.</p>
+          <div class="row"><button id="exportProfile">Export…</button><button id="importProfile">Import…</button></div>
+          <input type="file" id="importFile" accept=".json,application/json" hidden />
         </div>
         <div class="card">
           <h3>Device</h3>

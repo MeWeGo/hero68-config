@@ -172,6 +172,33 @@ input[type="search"] { background: var(--card); border: 1px solid var(--line); b
 .pill.live { background: #3b2a12; color: #fcd34d; }
 .card.disabled > :not(h3):not(.rhythm-note) { opacity: 0.4; pointer-events: none; }
 
+.row.wrap { flex-wrap: wrap; }
+input.num, input[type="text"] { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+input.num { width: 76px; }
+input[type="text"] { flex: 1; min-width: 0; }
+.key .badge { color: var(--warn); font-weight: 700; }
+.key .fill { position: absolute; left: 0; right: 0; bottom: 0; background: #22d3ee55; pointer-events: none; }
+.key.done { border-color: #22c55e; box-shadow: 0 0 0 1px #22c55e, inset 0 -3px 0 #0005; }
+.board.calibrating .key { cursor: default; }
+
+.adv-editor { display: flex; flex-direction: column; gap: 10px; }
+.adv-grid { display: grid; grid-template-columns: 1.6fr repeat(4, 1fr); gap: 6px; align-items: center; }
+.adv-grid .hd { font-size: 11px; color: var(--muted); text-align: center; }
+.adv-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 10px; align-items: center; }
+select optgroup { background: var(--panel); }
+
+.macro-list { display: flex; flex-direction: column; gap: 4px; max-height: 210px; overflow: auto; }
+.macro-list button { text-align: left; }
+.macro-list button.active { border-color: var(--accent); background: #1d3a42; }
+.macro-events { display: flex; flex-wrap: wrap; gap: 6px; max-height: 180px; overflow: auto; align-content: flex-start; }
+.ev { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 3px 4px 3px 8px; font-size: 12px; }
+.ev .dir { font-weight: 700; }
+.ev .dir.down { color: #6ee7b7; }
+.ev .dir.up { color: #fca5a5; }
+.ev input { width: 56px; padding: 2px 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 5px; font-size: 12px; }
+.ev button { padding: 0 6px; border: none; background: none; color: var(--muted); }
+button.recording { background: var(--danger); border-color: var(--danger); color: white; }
+
 .info { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
 .info dt { color: var(--muted); }
 .info dd { margin: 0; font-variant-numeric: tabular-nums; user-select: text; }

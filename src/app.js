@@ -3,6 +3,8 @@ import { RhythmEngine, EFFECTS, PALETTES } from "./rhythm.js";
 import LAYOUT from "./data/layout68.js";
 import KEYCODES from "./data/keycodes.js";
 import { MAIN_MODES, SIDE_MODES, MAIN_LIMITS, SIDE_LIMITS } from "./data/lighting.js";
+import * as Macros from "./macros.js";
+import { initMacrosTab } from "./macros-ui.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -10,6 +12,8 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const BASE = LAYOUT[0].keys;
 const POSITIONS = BASE.map((k) => k.pos);
 const WASD = [30, 43, 44, 45];
+const LAYER_TABS = new Set(["keymap", "advanced", "macros"]); // tabs that edit one key on one layer
+const LAYER_NAMES = ["Base", "Fn1", "Fn2"];
 
 const state = {
   kb: null,
@@ -18,8 +22,12 @@ const state = {
   selected: new Set(),
   actuation: new Map(),
   rt: new Map(),
+  deadzones: new Map(),
   keymap: [new Map(), new Map(), new Map()],
+  advanced: [new Map(), new Map(), new Map()],
   colors: new Map(),
+  macros: Macros.loadMacros(),
+  calib: null, // Map(pos -> {min, max, cur, pressed, done}) while calibrating
   main: null,
   side: null,
 };
@@ -59,6 +67,8 @@ KEYCODES.push(FN_GROUP);
 const pretty = (n) => n.replace(/^L_/, "L ").replace(/^R_/, "R ").replace("_", " ");
 function keyName(value) {
   if (value === 0) return "—";
+  const macro = Macros.describeMacroKeycode(value, state.macros);
+  if (macro) return macro;
   const n = KEY_NAMES.get(value) ?? fnName(value);
   return n ? pretty(n) : "0x" + value.toString(16).padStart(8, "0");
 }
@@ -134,12 +144,15 @@ let dragging = null;
 board.addEventListener("mousedown", (e) => {
   const el = e.target.closest(".key");
   if (!el) return;
+  if (state.calib) return;
   const pos = Number(el.dataset.pos);
-  const additive = (e.ctrlKey || e.shiftKey) && state.tab !== "keymap";
+  const single = LAYER_TABS.has(state.tab);
+  const additive = (e.ctrlKey || e.shiftKey) && !single;
   if (!additive) state.selected.clear();
-  dragging = state.tab === "keymap" ? "single" : state.selected.has(pos) ? "remove" : "add";
+  dragging = single ? "single" : state.selected.has(pos) ? "remove" : "add";
   toggleSel(pos);
   if (state.tab === "performance" && state.selected.size === 1) loadPerfControls(pos);
+  if (state.tab === "advanced") loadAdvancedEditor(pos);
   render();
 });
 board.addEventListener("mouseover", (e) => {
@@ -177,11 +190,29 @@ function render() {
     const lab = el.firstChild;
     const sub = el.lastChild;
     el.classList.toggle("sel", state.selected.has(k.pos));
-    el.classList.remove("changed");
+    el.classList.remove("changed", "done");
     el.querySelector(".swatch")?.remove();
+    el.querySelector(".fill")?.remove();
     sub.innerHTML = "";
 
-    if (state.tab === "keymap") {
+    if (state.calib) {
+      lab.textContent = pretty(k.name);
+      const c = state.calib.get(k.pos);
+      if (c?.done) el.classList.add("done");
+      if (c && c.max > c.min) {
+        const depth = Math.max(0, Math.min(1, Math.abs(c.cur - c.min) / Math.abs(c.max - c.min)));
+        if (c.pressed && depth > 0.02) {
+          const f = document.createElement("i");
+          f.className = "fill";
+          f.style.height = depth * 100 + "%";
+          el.append(f);
+        }
+      }
+      el.title = lab.textContent;
+      continue;
+    }
+
+    if (state.tab === "keymap" || state.tab === "macros") {
       const v = state.keymap[state.layer].get(k.pos);
       lab.textContent = v === undefined ? pretty(k.name) : keyName(v);
       // The bundled layout only knows factory values for the base layer (its Fn tables are base copies).
@@ -194,7 +225,14 @@ function render() {
     if (state.tab === "performance") {
       const a = state.actuation.get(k.pos);
       const r = state.rt.get(k.pos);
-      if (a) sub.innerHTML = `<span>${(a.um / 1000).toFixed(2)}</span>${r?.enabled ? '<span class="rt">RT</span>' : ""}`;
+      const dz = state.deadzones.get(k.pos);
+      if (a)
+        sub.innerHTML = `<span>${(a.um / 1000).toFixed(2)}</span><span>${dz?.enabled ? '<span class="badge">DZ</span> ' : ""}${r?.enabled ? '<span class="rt">RT</span>' : ""}</span>`;
+    }
+
+    if (state.tab === "advanced") {
+      const adv = state.advanced[state.layer].get(k.pos);
+      if (adv) sub.innerHTML = `<span class="badge">${adv.type}</span>`;
     }
 
     if (state.tab === "lighting") {
@@ -209,6 +247,7 @@ function render() {
   }
   $("#selCount").textContent = `${state.selected.size} selected`;
   if (state.tab === "keymap") updateKeymapTitle();
+  board.classList.toggle("calibrating", !!state.calib);
   paintPreview();
 }
 
@@ -219,9 +258,11 @@ $$("#tabs button").forEach((b) =>
     state.tab = b.dataset.tab;
     $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
     $$(".panel").forEach((p) => (p.hidden = p.dataset.panel !== state.tab));
-    $("#layers").hidden = state.tab !== "keymap";
-    $(".sel-tools").style.visibility = state.tab === "settings" ? "hidden" : "visible";
-    if (state.tab === "keymap" && state.selected.size > 1) state.selected.clear();
+    $("#layers").hidden = !LAYER_TABS.has(state.tab);
+    $(".sel-tools").style.visibility = state.tab === "settings" || LAYER_TABS.has(state.tab) ? "hidden" : "visible";
+    if (LAYER_TABS.has(state.tab) && state.selected.size > 1) state.selected.clear();
+    if (state.tab === "advanced") loadAdvancedEditor([...state.selected][0]);
+    if (state.tab === "macros") macrosTab.refresh();
     render();
   }),
 );
@@ -265,14 +306,18 @@ async function loadAll() {
   const profile = await kb.getProfile();
   $$("#profiles button").forEach((b) => b.classList.toggle("active", Number(b.dataset.profile) === profile));
 
-  busy("Reading actuation & rapid trigger…");
+  busy("Reading actuation, rapid trigger & dead zones…");
   state.actuation = await kb.getActuation(POSITIONS);
   state.rt = await kb.getRapidTrigger(POSITIONS);
+  state.deadzones = await kb.getDeadZones(POSITIONS);
 
   for (let l = 0; l < 3; l++) {
     busy(`Reading keymap layer ${l + 1}/3…`);
     state.keymap[l] = await kb.getKeys(l, POSITIONS);
   }
+
+  busy("Reading advanced keys…");
+  for (let l = 0; l < 3; l++) state.advanced[l] = await readAdvancedLayer(kb, l);
 
   busy("Reading lighting…");
   state.main = await kb.getLight();
@@ -285,6 +330,8 @@ async function loadAll() {
   $("#polling").value = String(await kb.getPolling());
   $("#winLock").checked = await kb.getWinLock();
   $("#macMode").checked = await kb.getMacMode();
+  $("#autoCal").checked = await kb.getAutoCalibrate();
+  $("#debounce").checked = await kb.getDebounce();
 
   $("#info").innerHTML = `
     <dt>Model</dt><dd>HERO 68 HE</dd>
@@ -304,6 +351,7 @@ navigator.hid.addEventListener("connect", () => setTimeout(() => !state.kb && co
 navigator.hid.addEventListener("disconnect", (e) => {
   if (state.kb && e.device === state.kb.device) {
     state.kb = null;
+    if (state.calib) stopCalibration();
     setConnected(false, "Disconnected");
   }
 });
@@ -325,23 +373,35 @@ $$("#profiles button").forEach((b) =>
 const act = $("#actuation"),
   rtEn = $("#rtEnabled"),
   rtP = $("#rtPress"),
-  rtR = $("#rtRelease");
+  rtR = $("#rtRelease"),
+  dzEn = $("#dzEnabled"),
+  dzTop = $("#dzTop"),
+  dzBottom = $("#dzBottom");
 function updatePerfOutputs() {
   $("#actuationOut").textContent = mm(act.value * 10);
   $("#rtPressOut").textContent = mm(rtP.value * 10);
   $("#rtReleaseOut").textContent = mm(rtR.value * 10);
+  $("#dzTopOut").textContent = mm(dzTop.value * 10);
+  $("#dzBottomOut").textContent = mm(dzBottom.value * 10);
   rtP.disabled = rtR.disabled = !rtEn.checked;
+  dzTop.disabled = dzBottom.disabled = !dzEn.checked;
 }
-[act, rtP, rtR, rtEn].forEach((el) => el.addEventListener("input", updatePerfOutputs));
+[act, rtP, rtR, rtEn, dzEn, dzTop, dzBottom].forEach((el) => el.addEventListener("input", updatePerfOutputs));
 
 function loadPerfControls(pos) {
   const a = state.actuation.get(pos);
   const r = state.rt.get(pos);
+  const dz = state.deadzones.get(pos);
   if (a) act.value = Math.round(a.um / 10);
   if (r) {
     rtEn.checked = r.enabled;
     rtP.value = Math.max(1, Math.round(r.pressUm / 10));
     rtR.value = Math.max(1, Math.round(r.releaseUm / 10));
+  }
+  if (dz) {
+    dzEn.checked = dz.enabled;
+    dzTop.value = Math.round(dz.topUm / 10);
+    dzBottom.value = Math.round(dz.bottomUm / 10);
   }
   updatePerfOutputs();
 }
@@ -356,11 +416,16 @@ $("#applyPerf").addEventListener("click", () => {
     await state.kb.setRapidTrigger(
       keys.map((pos) => ({ pos, enabled: rtEn.checked, pressUm: rtP.value * 10, releaseUm: rtR.value * 10, custom: true })),
     );
+    await state.kb.setDeadZones(
+      keys.map((pos) => ({ pos, enabled: dzEn.checked, topUm: dzTop.value * 10, bottomUm: dzBottom.value * 10, custom: true })),
+    );
     // read back so the board shows what the firmware actually stored
     const a = await state.kb.getActuation(keys);
     const r = await state.kb.getRapidTrigger(keys);
+    const d = await state.kb.getDeadZones(keys);
     a.forEach((v, k) => state.actuation.set(k, v));
     r.forEach((v, k) => state.rt.set(k, v));
+    d.forEach((v, k) => state.deadzones.set(k, v));
     render();
     toast(`Saved ${keys.length} key${keys.length > 1 ? "s" : ""}`);
   });
@@ -376,6 +441,7 @@ $$("#layers button").forEach((b) =>
     $$("#layers button").forEach((x) => x.classList.toggle("active", x === b));
     $("#resetKey").disabled = state.layer !== 0;
     $("#resetKey").title = state.layer ? "Factory values are only known for the base layer — use Reset whole layer" : "";
+    if (state.tab === "advanced") loadAdvancedEditor([...state.selected][0]);
     render();
   }),
 );
@@ -453,6 +519,196 @@ $("#resetLayer").addEventListener("click", () => {
     state.keymap[layer] = await state.kb.getKeys(layer, POSITIONS);
     render();
     toast("Layer reset");
+  });
+});
+
+// ---- advanced keys ---------------------------------------------------------
+
+async function readAdvancedLayer(kb, layer) {
+  const out = new Map();
+  for (const pos of POSITIONS) {
+    const a = await kb.getAdvanced(layer, pos);
+    if (a) out.set(pos, a);
+  }
+  return out;
+}
+
+const ADV_DEFAULTS = {
+  DKS: () => ({ type: "DKS", distances: [1000, 3000, 3000, 1000], slots: [0, 1, 2, 3].map(() => ({ key: 0, sets: [0, 0, 0, 0] })) }),
+  MT: () => ({ type: "MT", tap: 0, hold: 0, delay: 200 }),
+  TGL: () => ({ type: "TGL", key: 0, delay: 200 }),
+  SOCD: (pos) => ({ type: "SOCD", keys: [pos, 0], mode: 1 }),
+  MPT: () => ({ type: "MPT", slots: [500, 1000, 1500].map((um) => ({ key: 0, um })) }),
+  END: () => ({ type: "END", key: 0 }),
+};
+const DKS_STAGES = ["Press", "Bottom out", "Lift", "Release"];
+// DKS slot values (from the official editor): 0 nothing, 1 tap at this stage, 4/8/12 press here and hold 1/2/3 stages
+const DKS_ACTIONS = [[0, "—"], [1, "Tap"], [4, "Hold →"], [8, "Hold →→"], [12, "Hold →→→"]];
+const SOCD_MODES = [[1, "Last input wins"], [3, "This key wins"], [4, "Paired key wins"], [0, "Neutral (both cancel)"]];
+
+let advPos = null;
+let advDraft = null;
+
+function keySelect(value, onChange) {
+  const sel = document.createElement("select");
+  sel.innerHTML =
+    `<option value="0">— none —</option>` +
+    KEYCODES.map((g) => `<optgroup label="${g.label}">${g.items.map((i) => `<option value="${Number(i.value)}">${pretty(i.name)}</option>`).join("")}</optgroup>`).join("");
+  if (value && !$$("option", sel).some((o) => Number(o.value) === value)) sel.insertAdjacentHTML("beforeend", `<option value="${value}">${keyName(value)}</option>`);
+  sel.value = String(value || 0);
+  sel.onchange = () => onChange(Number(sel.value));
+  return sel;
+}
+
+function depthSlider(label, um, onChange, min = 10, max = 400) {
+  const row = document.createElement("div");
+  row.innerHTML = `<label class="lbl">${label}</label><div class="slider-row"><input type="range" min="${min}" max="${max}" value="${Math.round(um / 10)}" /><output>${mm(um)}</output></div>`;
+  const input = $("input", row);
+  input.oninput = () => {
+    $("output", row).textContent = mm(input.value * 10);
+    onChange(input.value * 10);
+  };
+  return row;
+}
+
+function msInput(label, value, onChange) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<label class="lbl">${label}</label><input type="number" class="num" min="50" max="2000" value="${value}" /><span class="muted">ms</span>`;
+  $("input", row).onchange = (e) => onChange(Math.max(50, Math.min(2000, Number(e.target.value) || 200)));
+  return row;
+}
+
+function labelled(label, el) {
+  const row = document.createElement("div");
+  row.className = "adv-row";
+  row.innerHTML = `<label class="lbl">${label}</label>`;
+  row.append(el);
+  return row;
+}
+
+function loadAdvancedEditor(pos) {
+  advPos = pos ?? null;
+  const k = BASE.find((x) => x.pos === pos);
+  const cur = pos != null ? state.advanced[state.layer].get(pos) : null;
+  advDraft = cur ? JSON.parse(JSON.stringify(cur)) : null;
+  $("#advTitle").textContent = k ? `${pretty(k.name)} on ${LAYER_NAMES[state.layer]}${cur ? ` · currently ${cur.type}` : ""}` : "Select a key";
+  $("#advType").disabled = $("#advSave").disabled = !k;
+  $("#advRemove").disabled = !cur;
+  $("#advType").value = advDraft?.type ?? "";
+  buildAdvancedEditor();
+}
+
+$("#advType").addEventListener("change", (e) => {
+  const t = e.target.value;
+  advDraft = t ? ADV_DEFAULTS[t](advPos) : null;
+  buildAdvancedEditor();
+});
+
+function buildAdvancedEditor() {
+  const box = $("#advEditor");
+  box.innerHTML = "";
+  const d = advDraft;
+  if (!d) return;
+  if (d.type === "DKS") {
+    box.append(
+      depthSlider("Press point (stages 1 and 4)", d.distances[0], (v) => (d.distances[0] = d.distances[3] = v)),
+      depthSlider("Bottom-out point (stages 2 and 3)", d.distances[1], (v) => (d.distances[1] = d.distances[2] = v)),
+    );
+    const grid = document.createElement("div");
+    grid.className = "adv-grid";
+    grid.innerHTML = `<span class="hd">Key</span>` + DKS_STAGES.map((s) => `<span class="hd">${s}</span>`).join("");
+    d.slots.forEach((slot, si) => {
+      grid.append(keySelect(slot.key, (v) => (slot.key = v)));
+      DKS_STAGES.forEach((_, stage) => {
+        const sel = document.createElement("select");
+        const maxHold = 3 - stage; // can't hold past the last stage
+        sel.innerHTML = DKS_ACTIONS.filter(([v]) => v <= 1 || v / 4 <= maxHold).map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
+        sel.value = String(slot.sets[stage]);
+        sel.onchange = () => {
+          const v = Number(sel.value);
+          slot.sets[stage] = v;
+          // a hold covers the following stages, so clear them
+          for (let s = stage + 1; s <= stage + (v >= 4 ? v / 4 : 0) && s < 4; s++) slot.sets[s] = 0;
+          buildAdvancedEditor();
+        };
+        grid.append(sel);
+      });
+    });
+    box.append(grid, Object.assign(document.createElement("p"), { className: "muted", textContent: "Each row is one key action. Pick what it does at each stage of the keystroke: tap once, or press and hold until a later stage." }));
+  } else if (d.type === "MT") {
+    box.append(labelled("On tap", keySelect(d.tap, (v) => (d.tap = v))), labelled("On hold", keySelect(d.hold, (v) => (d.hold = v))), msInput("Hold after", d.delay, (v) => (d.delay = v)));
+  } else if (d.type === "TGL") {
+    box.append(labelled("Key", keySelect(d.key, (v) => (d.key = v))), msInput("Hold after", d.delay, (v) => (d.delay = v)));
+  } else if (d.type === "SOCD") {
+    const other = document.createElement("select");
+    other.innerHTML = `<option value="0">— pick a key —</option>` + BASE.filter((k) => k.pos !== advPos).map((k) => `<option value="${k.pos}">${pretty(k.name)}</option>`).join("");
+    other.value = String(d.keys.find((p) => p !== advPos) ?? 0);
+    other.onchange = () => (d.keys = [advPos, Number(other.value)]);
+    const mode = document.createElement("select");
+    mode.innerHTML = SOCD_MODES.map(([v, n]) => `<option value="${v}">${n}</option>`).join("");
+    mode.value = String(d.mode);
+    mode.onchange = () => (d.mode = Number(mode.value));
+    box.append(labelled("Paired key", other), labelled("When both are held", mode));
+  } else if (d.type === "MPT") {
+    d.slots.forEach((slot, i) => {
+      box.append(labelled(`Action ${i + 1}`, keySelect(slot.key, (v) => (slot.key = v))), depthSlider(`Action ${i + 1} depth`, slot.um, (v) => (slot.um = v)));
+    });
+  } else if (d.type === "END") {
+    box.append(labelled("Send on release", keySelect(d.key, (v) => (d.key = v))));
+  }
+}
+
+function advancedValid(d) {
+  if (d.type === "DKS") return d.slots.some((s) => s.key && s.sets.some((x) => x));
+  if (d.type === "MT") return d.tap || d.hold;
+  if (d.type === "SOCD") return d.keys.length === 2 && d.keys[1];
+  if (d.type === "MPT") return d.slots.some((s) => s.key);
+  return !!d.key;
+}
+
+async function refreshAdvanced(layer, positions) {
+  for (const p of new Set(positions)) {
+    const a = await state.kb.getAdvanced(layer, p);
+    a ? state.advanced[layer].set(p, a) : state.advanced[layer].delete(p);
+  }
+}
+
+// SOCD bindings live on both keys of the pair, so clearing one means clearing its partner too
+async function clearAdvanced(layer, pos) {
+  const cur = state.advanced[layer].get(pos);
+  const targets = cur?.type === "SOCD" ? cur.keys : [pos];
+  for (const p of targets) await state.kb.setAdvanced(layer, p, null);
+  return targets;
+}
+
+$("#advSave").addEventListener("click", () => {
+  if (!state.kb) return toast("Connect the keyboard first", true);
+  if (advPos == null) return toast("Select a key first", true);
+  const layer = state.layer, pos = advPos, d = advDraft;
+  if (d && !advancedValid(d)) return toast("Pick at least one key for this function", true);
+  guarded("Saving advanced key…", async () => {
+    const touched = await clearAdvanced(layer, pos);
+    if (d) {
+      if (d.type === "SOCD") for (const p of d.keys) if (p !== pos) touched.push(...(await clearAdvanced(layer, p)));
+      await state.kb.setAdvanced(layer, pos, d);
+      touched.push(pos, ...(d.type === "SOCD" ? d.keys : []));
+    }
+    await refreshAdvanced(layer, touched);
+    loadAdvancedEditor(pos);
+    render();
+    toast(d ? `${d.type} saved` : "Advanced function removed");
+  });
+});
+
+$("#advRemove").addEventListener("click", () => {
+  if (!state.kb || advPos == null) return;
+  const layer = state.layer, pos = advPos;
+  guarded("Removing…", async () => {
+    await refreshAdvanced(layer, await clearAdvanced(layer, pos));
+    loadAdvancedEditor(pos);
+    render();
+    toast("Advanced function removed");
   });
 });
 
@@ -639,6 +895,162 @@ $("#polling").addEventListener("change", (e) =>
 );
 $("#winLock").addEventListener("change", (e) => guarded("Saving…", () => state.kb.setWinLock(e.target.checked)));
 $("#macMode").addEventListener("change", (e) => guarded("Saving…", () => state.kb.setMacMode(e.target.checked)));
+$("#autoCal").addEventListener("change", (e) => guarded("Saving…", () => state.kb.setAutoCalibrate(e.target.checked)));
+$("#debounce").addEventListener("change", (e) => guarded("Saving…", () => state.kb.setDebounce(e.target.checked)));
+
+// ---- switch calibration ------------------------------------------------------
+
+let calibTimer = null;
+
+function onCalibrationReport(b) {
+  if (!state.calib || b[0] !== 0x94 || b[1] !== 2) return;
+  for (let i = 0; i + 6 <= b[5]; i += 6) {
+    const pos = (b[6 + i] << 8) | b[7 + i];
+    const raw = (b[8 + i] << 8) | b[9 + i];
+    const c = state.calib.get(pos);
+    if (!c) continue;
+    c.pressed = (raw & 0x8000) !== 0;
+    c.cur = raw & 0x7fff;
+    if (c.pressed) c.seen = true;
+    else if (c.seen) c.done = true; // pressed and released again
+  }
+  render();
+}
+
+async function stopCalibration() {
+  clearInterval(calibTimer);
+  calibTimer = null;
+  state.calib = null;
+  $("#calibrate").textContent = "Start calibration";
+  if (state.kb) await state.kb.calibrationStop();
+  render();
+}
+
+$("#calibrate").addEventListener("click", () => {
+  if (!state.kb) return toast("Connect the keyboard first", true);
+  if (state.calib) {
+    const done = [...state.calib.values()].filter((c) => c.done).length;
+    return guarded("Saving calibration…", async () => {
+      await stopCalibration();
+      toast(`Calibration finished (${done}/${POSITIONS.length} keys)`);
+    });
+  }
+  if (rhythm.running) return toast("Turn music rhythm off first", true);
+  guarded("Starting calibration…", async () => {
+    const range = await state.kb.getCalibrationRange(POSITIONS);
+    state.calib = new Map(POSITIONS.map((p) => [p, { ...(range.get(p) ?? { min: 0, max: 0 }), cur: 0, pressed: false, seen: false, done: false }]));
+    state.kb.onUnsolicited = onCalibrationReport;
+    await state.kb.calibrationStart();
+    // the firmware leaves calibration mode unless it keeps hearing from us
+    calibTimer = setInterval(() => state.kb?.calibrationStart().catch(() => {}), 1000);
+    $("#calibrate").textContent = "Finish calibration";
+    state.selected.clear();
+    render();
+    toast("Press every key all the way down, then let go");
+  });
+});
+window.addEventListener("beforeunload", () => state.calib && state.kb?.calibrationStop());
+
+// ---- profile export / import ---------------------------------------------------
+
+$("#exportProfile").addEventListener("click", () => {
+  if (!state.kb) return toast("Connect the keyboard first", true);
+  guarded("Reading profile…", async () => {
+    const kb = state.kb;
+    const mapOf = (m) => Object.fromEntries([...m].map(([k, v]) => [k, v]));
+    const data = {
+      app: "hero68-config",
+      version: 1,
+      exported: new Date().toISOString(),
+      keymap: state.keymap.map(mapOf),
+      advanced: [],
+      actuation: mapOf(await kb.getActuation(POSITIONS)),
+      rapidTrigger: mapOf(await kb.getRapidTrigger(POSITIONS)),
+      deadZones: mapOf(await kb.getDeadZones(POSITIONS)),
+      light: await kb.getLight(),
+      sideLight: await kb.getSideLight(),
+      keyColors: mapOf(await kb.getKeyColors(POSITIONS)),
+      winLock: await kb.getWinLock(),
+      macMode: await kb.getMacMode(),
+      macros: state.macros,
+    };
+    for (let l = 0; l < 3; l++) data.advanced.push(mapOf((state.advanced[l] = await readAdvancedLayer(kb, l))));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+    a.download = `hero68-profile-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast("Profile exported");
+  });
+});
+
+$("#importProfile").addEventListener("click", () => {
+  if (!state.kb) return toast("Connect the keyboard first", true);
+  $("#importFile").click();
+});
+
+$("#importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+    if (data.app !== "hero68-config") throw new Error();
+  } catch {
+    return toast("That isn't a HERO 68 Config profile file", true);
+  }
+  if (!confirm("Overwrite the current onboard profile with this file?")) return;
+  const entries = (obj) => Object.entries(obj ?? {}).map(([k, v]) => [Number(k), v]);
+  guarded("Importing profile…", async () => {
+    const kb = state.kb;
+    if (Array.isArray(data.macros)) {
+      state.macros = data.macros;
+      Macros.saveMacros(state.macros);
+      if (state.macros.length) await kb.writeMacros(Macros.encodeMacros(state.macros));
+    }
+    for (let l = 0; l < 3; l++) {
+      busy(`Importing keymap layer ${l + 1}/3…`);
+      const keys = entries(data.keymap?.[l]).map(([pos, value]) => ({ pos, value }));
+      if (keys.length) await kb.setKeys(l, keys);
+    }
+    busy("Importing actuation, rapid trigger & dead zones…");
+    await kb.setActuation(entries(data.actuation).map(([pos, v]) => ({ pos, ...v })));
+    await kb.setRapidTrigger(entries(data.rapidTrigger).map(([pos, v]) => ({ pos, ...v })));
+    await kb.setDeadZones(entries(data.deadZones).map(([pos, v]) => ({ pos, ...v })));
+    busy("Importing advanced keys…");
+    for (let l = 0; l < 3; l++) {
+      const wanted = new Map(entries(data.advanced?.[l]));
+      for (const pos of POSITIONS) {
+        const have = state.advanced[l].get(pos);
+        const want = wanted.get(pos);
+        if (have && !want) await kb.setAdvanced(l, pos, null);
+      }
+      const doneSocd = new Set();
+      for (const [pos, adv] of wanted) {
+        if (adv.type === "SOCD") {
+          if (doneSocd.has(pos)) continue; // the pair is stored on both keys; write it once
+          adv.keys.forEach((p) => doneSocd.add(p));
+        }
+        await kb.setAdvanced(l, pos, adv);
+      }
+    }
+    busy("Importing lighting…");
+    if (data.light) await kb.setLight(data.light);
+    if (data.sideLight) await kb.setSideLight(data.sideLight);
+    const colors = entries(data.keyColors).map(([pos, c]) => ({ pos, ...c }));
+    if (colors.length) await kb.setKeyColors(colors);
+    if (typeof data.winLock === "boolean") await kb.setWinLock(data.winLock);
+    if (typeof data.macMode === "boolean") await kb.setMacMode(data.macMode);
+    await loadAll();
+    macrosTab?.refresh();
+    toast("Profile imported");
+  });
+});
+
+// ---- macros (UI in macros-ui.js) ---------------------------------------------
+
+const macrosTab = initMacrosTab({ $, $$, state, toast, guarded, render, keyName, BASE, LAYER_NAMES, Macros });
 
 // ---- boot ------------------------------------------------------------------
 

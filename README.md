@@ -41,19 +41,21 @@ named after the tag.
 
 | Tab | What it does |
 | --- | --- |
-| Performance | Per-key actuation point (0.10–4.00 mm) and Rapid Trigger press/release sensitivity (0.01–4.00 mm). Drag or Ctrl+click to multi-select. |
+| Performance | Per-key actuation point (0.10–4.00 mm), Rapid Trigger press/release sensitivity (0.01–4.00 mm), top/bottom dead zones (0–0.50 mm). Drag or Ctrl+click to multi-select. |
 | Keymap | Remap any key on the Base / Fn1 / Fn2 layers, including media, mouse, shortcut combos, and the board's own functions (profiles, lighting controls). |
+| Advanced keys | DKS (4 actions by press depth), mod-tap, toggle, SOCD / snap tap, multi-point (3 depths), release key. Per layer. |
+| Macros | Record keyboard macros, add mouse clicks, edit delays, bind them as "run N times", "repeat while held" or "run until another key". |
 | Lighting | Main RGB mode/colour/brightness/speed, side light, per-key colours (for the "Custom" mode). |
 | Music rhythm | Keys react to whatever your PC is playing: Rock, spectrum bars, fire, beat ripple, center VU, circle VU, rainbow flow, sound wave, bass pulse, sparkle. Sensitivity, smoothing and palette, live preview on the on-screen board. |
-| Settings | Polling rate (125 Hz – 8 kHz), Win-key lock, Mac mode, device info. |
+| Settings | Polling rate (125 Hz – 8 kHz), Win-key lock, Mac mode, auto-calibration, debounce, guided switch calibration, profile export/import (JSON), device info. |
 | Header | Switch between onboard profiles P1–P3. |
 
 **Music rhythm** is built in. Unlike the AULA website, it needs no `HEROMusicServe.exe`. The app captures
 system audio itself (WASAPI loopback), analyses it, and streams frames to the keyboard at 30 fps. It uses
 about 1% CPU, and only while an effect is running.
 
-Not done yet: macros, advanced keys (DKS, mod-tap, toggle, SOCD), switch calibration, sleep timer.
-The protocol for all of these is in the official bundle (see `Lt` class notes below) if you want to add them.
+Macros are stored in the app (and in profile exports), because the keyboard has no command to read them back.
+There's no sleep timer: the official configurator doesn't offer one for this wired magnetic board either.
 
 ## Protocol (reverse engineered)
 
@@ -87,6 +89,12 @@ The `len` byte in a reply isn't always right (firmware reports 1 but carries 2 b
 | `99` | `19` | rapid trigger | entries `pos u16, enable, release u16, press u16, custom 0/1` (≤6/packet) |
 | `86` | `06` | per-key RGB | entries `pos u16, r, g, b`. Writes are multi-packet using `[3]`/`[4]` |
 | – | `11 <layer>` | reset layer | data `01` |
+| `96` | `16` | dead zones | entries `pos u16, top u16, bottom u16, custom 0/1, enabled 0/1` (≤6/packet) |
+| `84 18` | `04 18` | debounce | `0/1` |
+| `84 19` | `04 19` | auto-calibration | `0/1` |
+| `92 <layer>` | `12 <layer>` | advanced key | read per key: `02, pos u16`. `[2]` type: 1 TGL, 2 MT, 3 DKS, 4 SOCD, 5 MPT, 6 END (layouts in `src/protocol.js`). SOCD is stored on both keys of the pair |
+| – | `05` | macro table | whole table, multi-packet. No read-back |
+| `94 05` | `94 00` / `94 04` | calibration | `94 05` reads ranges, `94 00` starts (repeat every 1 s), `94 04` stops. Board streams `94 02` per-key depth while active |
 | – | `08 02` | live colour, whole board | `r, g, b`. No ack |
 | – | `08 01` | live colour, per key | groups `[r, g, b, n, pos × n]…`, unlisted keys dark, split across packets with `[3]`/`[4]`. No ack |
 
