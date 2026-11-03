@@ -25,6 +25,18 @@ npm start       # run in dev
 npm run dist    # build the Windows installer + portable exe into dist/
 ```
 
+## Releasing
+
+Releases are built by GitHub Actions only when a version tag is pushed. Normal commits don't trigger a build.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow sets the app version from the tag, builds both exes, and publishes them to a GitHub release
+named after the tag.
+
 ## Features
 
 | Tab | What it does |
