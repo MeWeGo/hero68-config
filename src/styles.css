@@ -103,6 +103,9 @@ main { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   transition: border-color 0.08s, background 0.08s;
 }
 .key:hover { border-color: #5a5f70; }
+/* Live rhythm preview recolours every key many times a second. With the transition on, each change starts
+   an animation and the whole board repaints continuously (measured ~2 CPU cores); without it, ~0.1 core. */
+.board.live .key { transition: none; box-shadow: none; }
 .key .lab {
   font-size: 11px;
   font-weight: 600;

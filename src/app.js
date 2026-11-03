@@ -5,6 +5,7 @@ import KEYCODES from "./data/keycodes.js";
 import { MAIN_MODES, SIDE_MODES, MAIN_LIMITS, SIDE_LIMITS } from "./data/lighting.js";
 import * as Macros from "./macros.js";
 import { initMacrosTab } from "./macros-ui.js";
+import { createPreview } from "./preview.js";
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -248,7 +249,7 @@ function render() {
   $("#selCount").textContent = `${state.selected.size} selected`;
   if (state.tab === "keymap") updateKeymapTitle();
   board.classList.toggle("calibrating", !!state.calib);
-  paintPreview();
+  updatePreviewEnabled();
 }
 
 // ---- tabs ------------------------------------------------------------------
@@ -811,6 +812,7 @@ $("#rhythmGain").value = rhythm.settings.gain;
 $("#rhythmSmooth").value = rhythm.settings.smooth;
 $("#rhythmPalette").value = rhythm.settings.palette;
 $("#rhythmColor").value = hex(rhythm.settings.color);
+$("#rhythmPreview").checked = rhythm.settings.preview !== false;
 
 function syncRhythmControls() {
   $("#rhythmGain").nextElementSibling.textContent = $("#rhythmGain").value;
@@ -826,9 +828,11 @@ $("#rhythmCard").addEventListener("input", (e) => {
     smooth: Number($("#rhythmSmooth").value),
     palette: $("#rhythmPalette").value,
     color: rgb($("#rhythmColor").value),
+    preview: $("#rhythmPreview").checked,
   });
   syncRhythmControls();
   saveRhythm();
+  updatePreviewEnabled();
 });
 
 function setRhythmRunning(on) {
@@ -837,10 +841,8 @@ function setRhythmRunning(on) {
   s.className = "pill " + (on ? "live" : "");
   mainCard.classList.toggle("disabled", on);
   $(".rhythm-note", mainCard).hidden = !on;
-  if (!on) {
-    preview = null;
-    paintPreview();
-  }
+  if (!on) preview.clear();
+  updatePreviewEnabled();
 }
 
 $("#rhythmEffect").addEventListener("change", async (e) => {
@@ -863,24 +865,13 @@ $("#rhythmEffect").addEventListener("change", async (e) => {
   }
 });
 
-// live preview of what is being sent to the keyboard
-let preview = null;
-let previewQueued = false;
-function paintPreview() {
-  previewQueued = false;
-  const on = state.tab === "lighting" && preview && rhythm.running;
-  for (const [pos, el] of keyEls) {
-    const c = on ? (preview.all ?? preview.get(pos)) : null;
-    el.style.backgroundColor = c && c.r + c.g + c.b ? `rgba(${c.r},${c.g},${c.b},0.55)` : "";
-  }
+// live preview of what is being sent to the keyboard (throttled, see preview.js)
+const preview = createPreview({ keyEls, board });
+function updatePreviewEnabled() {
+  preview.setEnabled(state.tab === "lighting" && rhythm.running && rhythm.settings.preview !== false);
 }
-rhythm.onFrame = (f) => {
-  preview = f;
-  if (!previewQueued) {
-    previewQueued = true;
-    requestAnimationFrame(paintPreview);
-  }
-};
+rhythm.onFrame = (f) => preview.push(f);
+updatePreviewEnabled();
 
 // ---- settings --------------------------------------------------------------
 
