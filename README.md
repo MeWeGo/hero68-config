@@ -46,7 +46,7 @@ named after the tag.
 | Advanced keys | DKS (4 actions by press depth), mod-tap, toggle, SOCD / snap tap, multi-point (3 depths), release key. Per layer. |
 | Macros | Record keyboard macros, add mouse clicks, edit delays, bind them as "run N times", "repeat while held" or "run until another key". |
 | Lighting | Main RGB mode/colour/brightness/speed, side light, per-key colours (for the "Custom" mode). |
-| Music rhythm | Keys react to whatever your PC is playing: Rock, spectrum bars, fire, beat ripple, center VU, circle VU, rainbow flow, sound wave, bass pulse, sparkle. Sensitivity, smoothing and palette, live preview on the on-screen board. |
+| Music rhythm | Keys react to whatever your PC is playing: Rock, spectrum bars, fire, beat ripple, center VU, circle VU, rainbow flow, sound wave, bass pulse, sparkle. Plus Center wave (no music needed): colour bands flowing from the middle out to both sides. Sensitivity, smoothing and palette, live preview on the on-screen board. |
 | Settings | Polling rate (125 Hz – 8 kHz), Win-key lock, Mac mode, auto-calibration, debounce, guided switch calibration, profile export/import (JSON), device info. |
 | Header | Switch between onboard profiles P1–P3. |
 

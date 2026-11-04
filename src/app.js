@@ -806,7 +806,10 @@ const saveRhythm = () => {
   } catch {}
 };
 
-$("#rhythmEffect").innerHTML = EFFECTS.map((e) => `<option value="${e.id}">${e.name}</option>`).join("");
+const effectOpt = (e) => `<option value="${e.id}">${e.name}</option>`;
+$("#rhythmEffect").innerHTML =
+  `<optgroup label="Music">${EFFECTS.filter((e) => !e.ambient).map(effectOpt).join("")}</optgroup>` +
+  `<optgroup label="No music">${EFFECTS.filter((e) => e.ambient).map(effectOpt).join("")}</optgroup>`;
 $("#rhythmPalette").innerHTML = PALETTES.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
 $("#rhythmGain").value = rhythm.settings.gain;
 $("#rhythmSmooth").value = rhythm.settings.smooth;
@@ -818,6 +821,13 @@ function syncRhythmControls() {
   $("#rhythmGain").nextElementSibling.textContent = $("#rhythmGain").value;
   $("#rhythmSmooth").nextElementSibling.textContent = $("#rhythmSmooth").value;
   $("#rhythmColor").hidden = $("#rhythmPalette").value !== "solid";
+  // effects that don't listen to music: Sensitivity becomes Speed, Smoothing does nothing
+  const ambient = !!EFFECTS.find((e) => e.id === $("#rhythmEffect").value)?.ambient;
+  $("#rhythmGainLbl").textContent = ambient ? "Speed" : "Sensitivity";
+  document.querySelectorAll("#rhythmCard .smooth-ctl").forEach((el) => (el.hidden = ambient));
+  $("#rhythmHint").textContent = ambient
+    ? "Animated by this app, no music needed. Runs while this app is open."
+    : "Reacts to whatever your PC is playing. Runs while this app is open.";
 }
 syncRhythmControls();
 
@@ -847,6 +857,7 @@ function setRhythmRunning(on) {
 
 $("#rhythmEffect").addEventListener("change", async (e) => {
   const id = e.target.value;
+  syncRhythmControls();
   if (id !== "off" && !state.kb) {
     e.target.value = "off";
     return toast("Connect the keyboard first", true);
