@@ -190,23 +190,6 @@ function sparkle(e, a) {
   return out;
 }
 
-// ---- lighting effects that don't listen to music (`ambient`) ------------------------------
-// The Sensitivity slider is used as Speed for these.
-
-// Center wave: colour bands start in the middle of the board and flow out to both sides.
-function centerWave(e) {
-  const st = e.state("centerWave", () => ({ t: 0 }));
-  st.t += 0.003 + e.settings.gain * 0.0012;
-  const cx = (COLS - 1) / 2;
-  const out = new Map();
-  for (const k of e.keys) {
-    const p = Math.abs(k.col - cx) / (COLS / 2) - st.t; // same phase on both sides = mirrored, moving outwards
-    if (e.settings.palette === "solid") out.set(k.pos, scale(e.settings.color, 0.12 + 0.88 * (0.5 + 0.5 * Math.cos(2 * Math.PI * p * 1.5))));
-    else out.set(k.pos, hsv(p * 0.8, 1, 1));
-  }
-  return out;
-}
-
 export const EFFECTS = [
   { id: "off", name: "Off" },
   { id: "rock", name: "Rock", fn: rock },
@@ -219,10 +202,7 @@ export const EFFECTS = [
   { id: "wave", name: "Sound wave", fn: wave },
   { id: "pulse", name: "Bass pulse", fn: pulse },
   { id: "sparkle", name: "Sparkle", fn: sparkle },
-  { id: "centerwave", name: "Center wave", fn: centerWave, ambient: true },
 ];
-
-const SILENCE = { L: new Array(COLS).fill(0), raw: new Array(COLS).fill(0), bass: 0, mid: 0, high: 0, energy: 0, beat: false, beatPower: 0 };
 
 // ---- engine ------------------------------------------------------------------
 
@@ -258,9 +238,7 @@ export class RhythmEngine {
 
   async setEffect(id) {
     if (id === "off") return this.stop();
-    const ambient = EFFECTS.find((e) => e.id === id)?.ambient;
-    if (ambient) this.audio.stop(); // no need to capture system audio
-    else if (!this.audio.running) await this.audio.start();
+    if (!this.audio.running) await this.audio.start();
     this.effect = id;
     this._state = {};
     this._timer ??= setInterval(() => this._frame(), 1000 / FPS);
@@ -321,7 +299,7 @@ export class RhythmEngine {
     this.hue = (this.hue + 0.003) % 1;
     const fx = EFFECTS.find((e) => e.id === this.effect);
     if (!fx?.fn) return;
-    const out = fx.fn(this, fx.ambient ? SILENCE : this._analyse());
+    const out = fx.fn(this, this._analyse());
     if (out instanceof Map) {
       for (const [pos, c] of out) out.set(pos, quant(c));
       this.kb?.streamKeys(out);
